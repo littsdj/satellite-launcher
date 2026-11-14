@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Satellite Launcher - dev harness</title>
+<style>
+  body { margin: 0; padding: 8px; background: #111; color: #ddd; font: 13px/1.4 system-ui, sans-serif; }
+  .row { margin: 6px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { font: inherit; padding: 6px 10px; }
+  #wrap { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+  #main { display: block; width: 100%; height: 70vh; background: #000; border: 1px solid #333; }
+  #main.phone { width: 360px; height: 640px; }
+  #second { display: none; width: 320px; height: 240px; background: #000; border: 1px solid #333; }
+  #second.on { display: block; }
+  #mainbox { flex: 1 1 360px; min-width: 0; }
+  pre { margin: 0; background: #1a1a1a; padding: 6px; overflow: auto; }
+  #state { min-height: 3.2em; }
+  #log { height: 180px; }
+</style>
+</head>
+<body>
+<div class="row">
+  <button data-lv="empty">Empty</button>
+  <button data-lv="six">6 satellites</button>
+  <button data-lv="debris">70 + debris</button>
+  <button data-lv="endless">Endless</button>
+  <button id="pause">Pause</button>
+  <button id="resize">Resize: full width</button>
+  <label><input type="checkbox" id="two"> Two instances</label>
+  <span id="fps"></span>
+</div>
+<div id="wrap">
+  <div id="mainbox"><canvas id="main"></canvas></div>
+  <canvas id="second"></canvas>
+</div>
+<div class="row"><pre id="state"></pre></div>
+<pre id="log"></pre>
+<script type="module">
+import { createGame } from './js/game/index.js';
+
+const LEVELS = {
+  empty:   { mode: 'single', traffic: 0,  debrisOnCollision: false, showTrajectoryPreview: true },
+  six:     { mode: 'single', traffic: 6,  debrisOnCollision: false, showTrajectoryPreview: true },
+  debris:  { mode: 'single', traffic: 70, debrisOnCollision: true,  showTrajectoryPreview: false },
+  endless: { mode: 'endless', traffic: 8, debrisOnCollision: true,  showTrajectoryPreview: true },
+};
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const lines = [];
+function log(tag, type, detail) {
+  const t = (performance.now() / 1000).toFixed(2);
+  lines.unshift(`[${t}] ${tag} ${type} ${JSON.stringify(detail || {})}`);
+  if (lines.length > 60) lines.length = 60;
+  logEl.textContent = lines.join('\n');
+}
+
+const game = createGame($('main'), { onEvent: (t, d) => log('A', t, d) });
+window.gameA = game;
+let game2 = null;
+let lastLevel = null;
+let paused = false;
+
+document.querySelectorAll('button[data-lv]').forEach((b) => {
+  b.addEventListener('click', () => {
+    lastLevel = LEVELS[b.dataset.lv];
+    game.loadLevel(lastLevel);
+    if (game2) game2.loadLevel(LEVELS.six);
+  });
+});
+$('pause').addEventListener('click', () => {
+  paused = !paused;
+  game.setPaused(paused);
+  if (game2) game2.setPaused(paused);
+  $('pause').textContent = paused ? 'Resume' : 'Pause';
+});
+$('resize').addEventListener('click', () => {
+  const phone = $('main').classList.toggle('phone');
+  $('resize').textContent = phone ? 'Resize: phone 360x640' : 'Resize: full width';
+});
+$('two').addEventListener('change', (e) => {
+  if (e.target.checked) {
+    $('second').classList.add('on');
+    game2 = createGame($('second'), { onEvent: (t, d) => log('B', t, d) });
+    window.gameB = game2;
+    game2.loadLevel(LEVELS.six);
+  } else if (game2) {
+    game2.destroy();
+    game2 = null;
+    $('second').classList.remove('on');
+  }
+});
+
+setInterval(() => {
+  const s = game.getState();
+  $('state').textContent = `A: ${JSON.stringify(s)}` +
+    (game2 ? `\nB: ${JSON.stringify(game2.getState())}` : '');
+}, 250);
+
+let frames = 0, t0 = performance.now();
+(function loop(t) {
+  frames++;
+  if (t - t0 >= 1000) { $('fps').textContent = frames + ' rAF/s'; frames = 0; t0 = t; }
+  requestAnimationFrame(loop);
+})(t0);
+</script>
+</body>
+</html>

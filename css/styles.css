@@ -1,0 +1,219 @@
+:root {
+  --ink: #0B1230;
+  --upper: #16224F;
+  --starlight: #EEF1FF;
+  --dim: #A9B3D9;
+  --signal: #FF6A2B;
+  --track: #5BD6E8;
+  --hazard: #FF5470;
+  --display: "Bricolage Grotesque", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --gutter: max(16px, 4vw);
+  --t-1: 1rem;
+  --t-2: 1.25rem;
+  --t-3: 1.6rem;
+  --t-4: clamp(1.6rem, 1rem + 2.6vw, 2.4rem);
+  --t-5: clamp(2.4rem, 1.5rem + 4vw, 4rem);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--ink); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--starlight);
+  font: 400 1.125rem/1.6 var(--body);
+}
+h1, h2 { font-family: var(--display); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin: 0; }
+p, ul, ol { margin: 0 0 1em; }
+a { color: var(--track); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, canvas:focus-visible, h2:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 3px;
+}
+h2[tabindex="-1"]:focus-visible { outline-offset: 6px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Buttons */
+.btn {
+  font: 700 1rem/1 var(--body);
+  padding: 0.8em 1.3em;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.btn-primary { background: var(--signal); color: var(--ink); }
+.btn-primary:hover { background: #ff8450; }
+.btn-ghost { background: rgba(11, 18, 48, 0.6); color: var(--starlight); border-color: var(--dim); padding: 0.6em 1em; }
+.btn-ghost:hover { border-color: var(--starlight); }
+
+/* Game stage */
+.stage {
+  position: relative;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  background: var(--ink);
+}
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  transition: opacity 0.7s ease;
+}
+.stage canvas:focus-visible { outline-offset: -6px; }
+/* Skip strip below the top game: phones only, so there is always a non-canvas place to touch and scroll. */
+.stage-skip { display: none; }
+.hud {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  padding: max(12px, env(safe-area-inset-top)) var(--gutter) max(16px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column;
+  transition: opacity 0.7s ease, visibility 0s;
+}
+.hud-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.brand h1 { font-size: 1.25rem; }
+.brand p { margin: 2px 0 0; font-size: 0.95rem; color: var(--dim); max-width: 28ch; line-height: 1.35; }
+.hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.levels { list-style: none; display: flex; gap: 8px; margin: 0; padding: 0; }
+.ring {
+  display: block; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--dim); background: transparent;
+}
+.levels li.current .ring { border-color: var(--signal); }
+.levels li.done .ring { border-color: var(--signal); background: var(--signal); }
+
+.attempt { margin: 10px 0 0; font-weight: 700; color: var(--signal); }
+.notice {
+  margin: 8px 0 0; align-self: flex-start; font-size: 0.9rem; color: var(--ink);
+  background: var(--dim); padding: 4px 10px; border-radius: 8px;
+}
+
+.prompt {
+  margin: auto auto 0;
+  max-width: min(60ch, 100%);
+  text-align: center;
+  font-size: var(--t-1);
+  line-height: 1.4;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: rgba(11, 18, 48, 0.78);
+  margin-bottom: max(8px, 4svh);
+}
+.prompt:empty { display: none; }
+.prompt[hidden] { display: none; }
+
+.panel {
+  background: rgba(22, 34, 79, 0.85);
+  border: 1px solid rgba(91, 214, 232, 0.35);
+  border-radius: 8px;
+  padding: 20px 22px;
+}
+.result {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(26rem, calc(100% - 2 * var(--gutter)));
+  pointer-events: none;
+}
+.result[hidden] { display: none; }
+.result h2 { font-size: var(--t-3); margin-bottom: 8px; }
+.result[data-tone="good"] h2 { color: var(--track); }
+.result[data-tone="bad"] h2 { color: var(--hazard); }
+.result p { margin-bottom: 14px; }
+
+/* The one orchestrated moment: fade from level 3 into the article */
+.stage.is-fading .hud { opacity: 0; visibility: hidden; transition: opacity 0.7s ease, visibility 0s 0.7s; }
+.stage.is-fading canvas { opacity: 0.2; }
+
+/* Article */
+.col { width: min(100% - 2 * var(--gutter), 65ch); margin-inline: auto; }
+.story { padding: clamp(48px, 10vw, 112px) 0 clamp(32px, 6vw, 64px); }
+.story h2, .endless h2 { font-size: var(--t-4); margin: clamp(40px, 7vw, 72px) 0 16px; }
+.story > .col:first-child h2 { margin-top: 0; }
+.opener { font-size: var(--t-2); line-height: 1.5; color: var(--starlight); }
+.note {
+  border-left: 4px solid var(--track);
+  padding: 2px 0 2px 16px;
+  font-weight: 700;
+}
+.small { font-size: 0.95rem; color: var(--dim); }
+.story ul { padding-left: 1.2em; }
+.story li { margin-bottom: 0.4em; }
+.story li::marker { color: var(--signal); }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+
+/* Chain-reaction diagram */
+.chain { width: min(100% - 2 * var(--gutter), 52rem); margin: clamp(28px, 5vw, 48px) auto; }
+.chain svg { display: block; width: 100%; height: auto; }
+.chain figcaption { margin-top: 12px; color: var(--dim); font-size: 1rem; max-width: 65ch; }
+.c-lines path { stroke: var(--dim); stroke-width: 2; fill: none; opacity: 0.7; }
+.c-body circle { fill: var(--track); }
+.c-burst { fill: var(--hazard); }
+.c-frag circle { fill: var(--hazard); }
+.c-label text { fill: var(--starlight); font: 400 26px var(--body); }
+
+/* Size ladder */
+.ladder { list-style: none; padding: 0; margin: 0 0 1em; }
+.rung { padding: 16px 0; border-top: 1px solid rgba(169, 179, 217, 0.25); }
+.rung:last-child { border-bottom: 1px solid rgba(169, 179, 217, 0.25); }
+.rung p { margin: 0; }
+.rung .num { font: 800 var(--t-4)/1.1 var(--display); letter-spacing: -0.02em; }
+.rung .what { color: var(--dim); margin-bottom: 10px; }
+.dots { display: flex; flex-wrap: wrap; gap: calc(var(--d) * 0.5); align-items: center; }
+.dots span { width: var(--d); height: var(--d); border-radius: 50%; background: var(--c); }
+
+/* Endless */
+.endless { padding-bottom: 24px; }
+.endless .col p { margin-bottom: 20px; }
+.stage-endless { height: 85vh; height: 85svh; min-height: 420px; }
+.score { font-size: 1rem; }
+.score p { margin: 0; }
+.big { font: 800 var(--t-4)/1 var(--display); }
+.dim { color: var(--dim); }
+.toast { margin-bottom: max(8px, 4svh); }
+#e-over .score-line .big { font-size: var(--t-3); }
+#e-over p:empty { display: none; }
+
+/* Footer */
+.foot { padding: 40px 0 56px; border-top: 1px solid rgba(169, 179, 217, 0.25); font-size: 0.95rem; color: var(--dim); }
+.foot h2 { font-size: var(--t-3); color: var(--starlight); margin-bottom: 12px; }
+.foot ul { padding-left: 1.1em; }
+.foot li { margin-bottom: 0.5em; overflow-wrap: anywhere; }
+
+/* Compact HUD on narrow screens */
+@media (max-width: 700px), (pointer: coarse) {
+  #game.stage { height: calc(100svh - 64px); min-height: 360px; }
+  .stage-skip {
+    display: flex; justify-content: center; align-items: center;
+    height: 64px; padding: 0 var(--gutter) env(safe-area-inset-bottom);
+  }
+  .stage-skip .btn { width: min(100%, 22rem); }
+  /* The strip below the canvas is the one skip on phones; don't show it twice. */
+  #skip-btn { display: none; }
+  /* Endless: leave margins and a shorter canvas so a thumb can always scroll the page. */
+  .stage-endless { height: 72svh; min-height: 360px; margin-inline: var(--gutter); border-radius: 8px; }
+  .endless { padding-bottom: 48px; }
+}
+@media (max-width: 600px) {
+  .brand p { display: none; }
+  .brand h1 { font-size: 1.1rem; }
+  .hud-right { gap: 8px; }
+  .btn-ghost { padding: 0.5em 0.9em; font-size: 0.9rem; }
+  .prompt { font-size: 0.95rem; margin-bottom: max(24px, 8svh); }
+}
+@media (min-width: 900px) {
+  .brand h1 { font-size: 1.6rem; }
+  .brand p { font-size: 1rem; }
+  .prompt { font-size: 1.1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hud, .stage canvas, .stage.is-fading .hud { transition: none; }
+}
