@@ -18,7 +18,11 @@ export function describeCollision(detail = {}) {
   if (isVanguard) phrase = 'Vanguard 1, a real satellite that has been silent since 1964';
   else if (!name) phrase = KIND_FALLBACK[kind] || 'something in orbit';
   else if (/^your satellite/i.test(name)) phrase = 'one of your own satellites';
-  else if (/^\d|[A-Z].*\d/.test(name) && kind === 'satellite') phrase = withArticle(name.replace(/\s*\d+$/, ''));
+  else if (/^[A-Z][a-z]+[A-Z]\w*\s+\d+$/.test(name) && kind === 'satellite') {
+    // Made-up satellite names such as "SkyLink 5": keep the capitals, say what it is.
+    const base = name.replace(/\s*\d+$/, '');
+    phrase = `${/^[AEIOU]/.test(base) ? 'an' : 'a'} ${base} satellite`;
+  } else if (/^\d|[A-Z].*\d/.test(name) && kind === 'satellite') phrase = withArticle(name.replace(/\s*\d+$/, ''));
   else phrase = withArticle(name);
   if (!isVanguard && kind === 'derelict' && !/old|dead/i.test(name)) phrase += ' (a dead satellite)';
   return { name, kind, phrase, isVanguard };

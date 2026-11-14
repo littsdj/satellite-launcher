@@ -81,3 +81,22 @@ export const SCRIPTED = [
 
 /** How long to hold on the final result before moving to the article (long enough to watch a cascade spread). */
 export const HOLD_MS = { collision: 7000, other: 2500 };
+
+/** Endless mode: starts with traffic, other launchers keep adding satellites, quick confirmation. */
+export const ENDLESS_LEVEL = {
+  mode: 'endless',
+  traffic: 8, // about 8 satellites already up, spread over the lanes
+  spreadTraffic: true, // one per altitude band, so no lane is empty or stacked
+  debrisOnCollision: true,
+  showTrajectoryPreview: true,
+  confirmTime: 3, // faster pace than the scripted levels (seconds)
+  // After each of your successes, other countries and companies launch too: 1-2 early, 3-4 later.
+  newcomers: {
+    schedule: [
+      { atScore: 1, min: 1, max: 2 },
+      { atScore: 4, min: 2, max: 3 },
+      { atScore: 7, min: 3, max: 4 },
+    ],
+    appear: 1.5, // seconds a new arrival fades in and cannot be hit
+  },
+};

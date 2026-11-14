@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { createSim, stepFreeBody, circularPeriod } from '../sim.js';
 import { CONFIG } from '../config.js';
-import { SCRIPTED, LEVEL2_TRAFFIC, makeCrowdedSky } from '../../story/levels.js';
-import { mulberry32, makeSim, runUntil, timeToApex, botTrial, BOT } from './bot.mjs';
+import { SCRIPTED, LEVEL2_TRAFFIC, makeCrowdedSky, ENDLESS_LEVEL } from '../../story/levels.js';
+import { mulberry32, makeSim, runUntil, timeToApex, botTrial, BOT, endlessRun, KID } from './bot.mjs';
 
 const GM = CONFIG.GM;
 const tests = [];
@@ -262,7 +262,7 @@ test('endless: success -> aiming with +1 object; crash -> aiming, run continues'
   assert.equal(o.playerPlaced, true);
   assert.equal(o.onRails, true);
   assert.deepEqual(events.at(-1), { type: 'orbit', detail: { orbiting: 1 } });
-  assert.deepEqual(sim.getState(), { phase: 'aiming', orbiting: 1, objects: 1 });
+  assert.deepEqual(sim.getState(), { phase: 'aiming', orbiting: 1, objects: 1, newcomers: 0 });
 
   sim.launch(Math.PI / 2, 0.3); // too weak: crash
   runUntil(sim, () => sim.phase !== 'flight', 30);
@@ -473,6 +473,242 @@ test('performance: 60 s of a debris level after a cascade', () => {
     assert.ok(ms / frames < 2);
     assert.ok(peak <= CONFIG.MAX_OBJECTS);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 8. Endless: starting traffic, newcomers, pace
+// ---------------------------------------------------------------------------
+
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const NEWCOMER_RULES = ENDLESS_LEVEL.newcomers.schedule;
+const ruleFor = (score) => NEWCOMER_RULES.filter((e) => e.atScore <= score).pop() || null;
+
+/**
+ * Play a full endless run with the bot, recording every newcomer spawn.
+ * Each record checks clearance at spawn and, on later steps, during the appear window.
+ */
+function observedRun(seed, level = ENDLESS_LEVEL) {
+  const spawns = [];
+  const seen = new Set();
+  let sim = null;
+  const onSim = (s) => {
+    sim = s;
+    const orig = s.step;
+    s.step = (dt) => {
+      orig(dt);
+      for (const o of s.objects) {
+        if (!o.newcomer || seen.has(o.id)) continue;
+        seen.add(o.id);
+        spawns.push({ id: o.id, t0: s.time, appear: o.appear, minDist: Infinity, atSpawn: Infinity, grace: o.grace, playerPlaced: o.playerPlaced });
+      }
+      for (const sp of spawns) {
+        if (s.time - sp.t0 > sp.appear) continue;
+        const me = s.objects.find((o) => o.id === sp.id);
+        if (!me) continue;
+        for (const o of s.objects) {
+          if (o === me || o.dead) continue;
+          const d = Math.hypot(o.x - me.x, o.y - me.y) - (o.radius + me.radius);
+          sp.minDist = Math.min(sp.minDist, d);
+          if (s.time === sp.t0) sp.atSpawn = Math.min(sp.atSpawn, d);
+        }
+      }
+    };
+  };
+  const run = endlessRun(seed, level, BOT, { ...KID, onSim });
+  return { run, sim, spawns };
+}
+
+test('endless start: ~8 objects, in band, clear of launch angle, altitudes spread over the lanes', () => {
+  let full = 0;
+  const quart = [0, 0, 0, 0];
+  for (let seed = 1; seed <= 200; seed++) {
+    const { sim } = makeSim(seed, ENDLESS_LEVEL);
+    assert.ok(sim.objects.length >= 7 && sim.objects.length <= 8, `seed ${seed}: ${sim.objects.length} objects`);
+    const bins = new Set();
+    for (const o of sim.objects) {
+      assert.ok(o.r >= CONFIG.BAND_MIN && o.r <= CONFIG.BAND_MAX);
+      assert.ok(Math.abs(wrapAngle(o.theta - Math.PI / 2)) >= CONFIG.SPAWN_CLEAR_ANGLE - 1e-9, 'clear of launch angle');
+      const alt = altitudeOf(o.r);
+      bins.add(Math.min(7, Math.floor(alt * 8)));
+      quart[Math.min(3, Math.floor(alt * 4))]++;
+      assert.equal(o.newcomer, undefined);
+    }
+    if (sim.objects.length === 8) {
+      full++;
+      assert.equal(bins.size, 8, `seed ${seed}: every altitude bin holds one object`);
+    }
+  }
+  assert.ok(full >= 190, `8 objects in ${full}/200 seeds`);
+  assert.ok(quart.every((n) => n > 0));
+});
+
+test('spreadTraffic off: generation is the same as before (default level unchanged)', () => {
+  const a = makeSim(5, { ...SINGLE_EMPTY, traffic: 12 }).sim;
+  const b = makeSim(5, { ...SINGLE_EMPTY, traffic: 12, spreadTraffic: false }).sim;
+  const key = (s) => JSON.stringify(s.objects.map((o) => [o.kind, o.r, o.theta, o.name]));
+  assert.equal(key(a), key(b));
+  assert.equal(a.level.spreadTraffic, false);
+  assert.equal(a.level.confirmTime, null);
+  assert.equal(a.level.newcomers, null);
+});
+
+test('scripted levels carry none of the new options', () => {
+  for (const l of SCRIPTED) {
+    for (const k of ['confirmTime', 'newcomers', 'spreadTraffic']) assert.equal(l.def[k], undefined, `${l.id}.${k}`);
+    const { sim } = makeSim(1, l.def);
+    assert.equal(sim.level.confirmTime, null);
+    assert.equal(sim.level.newcomers, null);
+    assert.equal(sim.level.spreadTraffic, false);
+    assert.ok(sim.objects.every((o) => !o.newcomer));
+  }
+});
+
+test('newcomers: per-success count follows the schedule and ramps up; events in order', () => {
+  const byScore = new Map(); // orbiting -> counts
+  let successes = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const { run, sim } = observedRun(seed);
+    const ev = run.events;
+    let total = 0;
+    ev.forEach((e, i) => {
+      if (e.type !== 'newcomers') return;
+      assert.equal(ev[i - 1].type, 'orbit', 'newcomers directly follows orbit');
+      const score = ev[i - 1].detail.orbiting;
+      const rule = ruleFor(score);
+      assert.ok(rule, 'no newcomers below the first schedule entry');
+      assert.ok(e.detail.count >= 1 && e.detail.count <= rule.max, `count ${e.detail.count} at score ${score}`);
+      total += e.detail.count;
+      assert.equal(e.detail.total, total);
+      assert.equal(e.detail.score, score);
+      if (!byScore.has(score)) byScore.set(score, []);
+      byScore.get(score).push(e.detail.count);
+    });
+    successes += ev.filter((e) => e.type === 'orbit').length;
+    assert.equal(sim.getState().newcomers, total);
+    assert.equal(run.newcomers, total);
+  }
+  assert.ok(successes > 100);
+  const mean = (lo, hi) => {
+    const xs = [...byScore].filter(([s]) => s >= lo && s <= hi).flatMap(([, v]) => v);
+    return xs.reduce((a, b) => a + b, 0) / xs.length;
+  };
+  const [e1, e2, e3] = [mean(1, 3), mean(4, 6), mean(7, 99)];
+  console.log(`    mean newcomers per success: score 1-3 ${e1.toFixed(2)}, 4-6 ${e2.toFixed(2)}, 7+ ${e3.toFixed(2)}`);
+  assert.ok(e1 >= 1 && e1 <= 2 && e2 > e1 && e3 > e2 && e3 <= 4);
+});
+
+test('newcomers: no overlapping spawns, clear over the whole appear window', () => {
+  let n = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const { spawns } = observedRun(seed);
+    for (const sp of spawns) {
+      n++;
+      assert.ok(sp.atSpawn > CONFIG.SPAWN_GAP - 1e-6, `seed ${seed}: gap at spawn ${sp.atSpawn}`);
+      assert.ok(sp.minDist > 0, `seed ${seed}: overlap during appear window (${sp.minDist})`);
+      assert.equal(sp.playerPlaced, false);
+    }
+  }
+  assert.ok(n > 300);
+});
+
+test('newcomers: fields, effect, names and score unaffected', () => {
+  const effects = [];
+  const { sim, events } = makeSim(4, { ...ENDLESS_EMPTY, newcomers: { schedule: [{ atScore: 1, min: 2, max: 2 }], appear: 1.5 } });
+  launchAndBurnAtApex(sim, 0.6);
+  runUntil(sim, () => sim.phase !== 'confirming', 40);
+  effects.push(...sim.drainEffects());
+  const nc = sim.objects.filter((o) => o.newcomer);
+  assert.equal(nc.length, 2);
+  for (const o of nc) {
+    assert.equal(o.kind, 'satellite');
+    assert.equal(o.playerPlaced, false);
+    assert.equal(o.onRails, true);
+    assert.equal(o.appear, 1.5);
+    assert.ok(o.grace > 1.4 && o.grace <= 1.5, `grace ${o.grace}`);
+    assert.ok(/^[A-Za-z]+ \d+$/.test(o.name) && !/^Your/.test(o.name), o.name);
+    assert.ok(effects.some((f) => f.type === 'arrival' && f.id === o.id && Math.hypot(f.x - o.x, f.y - o.y) < 0.05));
+  }
+  assert.equal(new Set(sim.objects.map((o) => o.id)).size, 3);
+  assert.deepEqual(types(events.slice(-2)), ['orbit', 'newcomers']);
+  assert.deepEqual(events.at(-1).detail, { count: 2, total: 2, score: 1 });
+  assert.deepEqual(sim.getState(), { phase: 'aiming', orbiting: 1, objects: 3, newcomers: 2 });
+});
+
+test('newcomers: grace counts down for rails objects; hazardous only after it', () => {
+  // Grace counts down on rails objects.
+  const { sim } = makeSim(6, { ...ENDLESS_EMPTY, traffic: [{ altitude: 0.5, angle: 0.4 }] });
+  sim.objects[0].grace = 1;
+  for (let i = 0; i < 30; i++) sim.step(1 / 60);
+  assert.ok(Math.abs(sim.objects[0].grace - 0.5) < 0.02, `grace ${sim.objects[0].grace}`);
+  for (let i = 0; i < 40; i++) sim.step(1 / 60);
+  assert.ok(sim.objects[0].grace <= 0);
+
+  // A vertical shot crosses an object at tHit: grace longer than that -> pass through, shorter -> collision.
+  const crossing = (graceFor) => {
+    const { sim: s, events } = makeSim(7, { ...ENDLESS_EMPTY, traffic: [{ altitude: 0.5, angle: 0.4 }] });
+    const o = s.objects[0];
+    const power = 0.75;
+    const path = s.predict(Math.PI / 2, power, 15);
+    const tHit = path.findIndex((p) => Math.hypot(p.x, p.y) >= o.r) * 0.05;
+    runUntil(s, () => Math.abs(wrapAngle(o.theta + o.omega * tHit - Math.PI / 2)) < 0.01, 60, 1 / 120);
+    o.grace = graceFor(tHit);
+    s.launch(Math.PI / 2, power);
+    runUntil(s, () => s.time > 0 && (events.some((e) => e.type === 'collision') || s.time > 0 && false) || !s.player || s.player.r > o.r + 0.5, 10, 1 / 120);
+    return events.some((e) => e.type === 'collision');
+  };
+  assert.equal(crossing((t) => t + 1), false, 'inside grace: no collision');
+  assert.equal(crossing(() => 0), true, 'no grace: collision');
+});
+
+test('newcomers: MAX_OBJECTS respected', () => {
+  const { sim } = makeSim(8, { ...ENDLESS_EMPTY, newcomers: { schedule: [{ atScore: 1, min: 3, max: 4 }], appear: 1 } });
+  const dummy = (i) => ({
+    id: 1000 + i, kind: 'debris', name: 'far', x: 5, y: 0, vx: 0, vy: 0, radius: 0.03, onRails: true,
+    r: 5, theta: i, omega: 0.1, age: 0, playerPlaced: false, grace: 0, dead: false,
+  });
+  for (let i = 0; i < CONFIG.MAX_OBJECTS - 2; i++) sim.objects.push(dummy(i));
+  launchAndBurnAtApex(sim, 0.6);
+  runUntil(sim, () => sim.phase !== 'confirming', 40);
+  assert.equal(sim.getState().orbiting, 1);
+  assert.equal(sim.objects.length, CONFIG.MAX_OBJECTS, 'player + one newcomer fill the cap');
+  assert.equal(sim.getState().newcomers, 1);
+});
+
+test('score counts only the player: newcomers never add to it', () => {
+  let checked = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const { run, sim } = observedRun(seed);
+    const orbits = run.events.filter((e) => e.type === 'orbit').length;
+    assert.equal(run.score, orbits);
+    assert.equal(sim.getState().orbiting, orbits);
+    const over = run.events.filter((e) => e.type === 'gameover');
+    if (over.length) {
+      assert.equal(over[0].detail.score, orbits);
+      checked++;
+    }
+    const placed = sim.objects.filter((o) => o.playerPlaced).length;
+    assert.ok(placed <= orbits);
+  }
+  assert.ok(checked > 30);
+});
+
+test('confirmation: endless confirmTime is used; single mode keeps clamp(period, 5, 10)', () => {
+  const confirmSeconds = (level) => {
+    const { sim } = makeSim(2, level);
+    launchAndBurnAtApex(sim, 0.7);
+    runUntil(sim, () => !sim.player.burning, 5, 1 / 120);
+    const r = sim.player.r;
+    const t0 = sim.time;
+    runUntil(sim, () => sim.phase !== 'confirming', 30, 1 / 120);
+    return { dur: sim.time - t0, r };
+  };
+  const a = confirmSeconds({ ...ENDLESS_EMPTY, confirmTime: 3 });
+  assert.ok(Math.abs(a.dur - 3) < 0.02, `endless confirm ${a.dur}`);
+  const b = confirmSeconds(SINGLE_EMPTY);
+  const expected = Math.min(10, Math.max(5, circularPeriod(b.r)));
+  assert.ok(Math.abs(b.dur - expected) < 0.02, `single confirm ${b.dur} vs ${expected}`);
+  const c = confirmSeconds({ ...SINGLE_EMPTY, confirmTime: 0 }); // invalid: ignored
+  assert.ok(Math.abs(c.dur - expected) < 0.02);
 });
 
 // ---------------------------------------------------------------------------

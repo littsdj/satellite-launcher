@@ -89,6 +89,11 @@ export function createGame(canvas, { onEvent = () => {} } = {}) {
       }
       phase = endless ? 'aiming' : 'resolved';
       emit('orbit', { orbiting });
+      if (endless) {
+        const count = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < count; i++) objects.push({ altitude: 0.15 + Math.random() * 0.8, angle: Math.random() * TAU, kind: 'satellite', name: 'Satellite' });
+        emit('newcomers', { count, total: objects.length, score: orbiting });
+      }
     } else if (kind === 'collision') {
       const hit = traffic[Math.floor(Math.random() * traffic.length)];
       emit('collision', { withName: hit.name, withKind: hit.kind });

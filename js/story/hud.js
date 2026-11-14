@@ -95,12 +95,12 @@ export function createEndlessHud(stage, canvas) {
   return {
     setCount: (n) => { count.textContent = String(n); },
     setBest: (n) => { bestEl.textContent = String(n); },
-    toast(text) {
+    toast(text, ms = 2200) {
       toast.textContent = text;
       toast.hidden = false;
       live.textContent = text;
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { toast.hidden = true; }, 2200);
+      toastTimer = setTimeout(() => { toast.hidden = true; }, ms);
     },
     hideGameOver() {
       over.hidden = true;

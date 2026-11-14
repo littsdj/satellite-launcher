@@ -233,10 +233,12 @@ const PARTICLE_PALETTE = [
   ['235,235,240', '200,200,210', '150,150,165', '110,110,125'],
   // 4 green celebratory
   ['240,255,240', '160,255,180', '90,230,130', '50,180,100'],
+  // 5 arrival (soft violet-pink: "someone new joined")
+  ['255,240,255', '232,190,255', '196,140,255', '140,100,220'],
 ];
 
-const RING_COLORS = ['#ffb347', '#ffffff', '#7dffa0', '#ffd84a', '#8fd8ff', '#ff5a3a', '#b9c2d6'];
-const RING_GLOW_RGB = ['255,170,70', '255,255,255', '125,255,160', '255,216,74', '143,216,255', '255,90,58', '185,194,214'];
+const RING_COLORS = ['#ffb347', '#ffffff', '#7dffa0', '#ffd84a', '#8fd8ff', '#ff5a3a', '#b9c2d6', '#d6a8ff'];
+const RING_GLOW_RGB = ['255,170,70', '255,255,255', '125,255,160', '255,216,74', '143,216,255', '255,90,58', '185,194,214', '214,168,255'];
 
 // ------------------------------------------------------------------------------------------
 
@@ -256,6 +258,13 @@ export function createRenderer(canvas, CONFIG) {
   let shx = 0;
   let shy = 0;
   let burnEmit = 0;
+  const reduceMotion = !!(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  // per-object arrival state, filled by arrivalOf() (no allocation)
+  let arrFade = 1; // 0..1 alpha/trail fade
+  let arrScale = 1; // sprite scale
+  let arrDx = 0; // visual world-unit offset (rising from slightly lower)
+  let arrDy = 0;
+  let arrPulse = 0; // extra glow strength
 
   // ---- sprites -------------------------------------------------------------------------
   const SPR = {
@@ -271,6 +280,7 @@ export function createRenderer(canvas, CONFIG) {
     player: softGlow('255,226,122'),
     debris: softGlow('255,106,42'),
     derelict: softGlow('170,150,130'),
+    newcomer: softGlow('214,168,255'),
   };
   const PGLOW = [];
   for (let t = 0; t < PARTICLE_PALETTE.length; t++) {
@@ -589,8 +599,46 @@ export function createRenderer(canvas, CONFIG) {
         }
         break;
       }
+      case 'arrival': {
+        addRing(0, x, y, 0, 1.0, 0.4, 7, 2.5);
+        addRing(0, x, y, 0.3, 1.0, 0.4, 7, 1.8);
+        addRing(1, x, y, 0, 0.6, 0.16, 7, 0);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU + Math.random() * 0.5;
+          const sp = 0.08 + Math.random() * 0.14;
+          spawn(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.7 + Math.random() * 0.6, 3 + Math.random() * 3, 5, 1.8);
+        }
+        break;
+      }
       default:
         break;
+    }
+  }
+
+  // Sets arrFade/arrScale/arrDx/arrDy/arrPulse for object o (identity for settled objects).
+  function arrivalOf(o) {
+    if (o.newcomer && o.age < o.appear) {
+      const t = Math.max(0, o.age) / (o.appear || 1);
+      const e = 1 - (1 - t) * (1 - t) * (1 - t); // ease-out cubic
+      arrFade = e;
+      arrPulse = 1 - t;
+      if (reduceMotion) {
+        arrScale = 1;
+        arrDx = 0;
+        arrDy = 0;
+      } else {
+        arrScale = 0.4 + 0.6 * e;
+        const k = (1 - e) * 0.15;
+        const d = Math.sqrt(o.x * o.x + o.y * o.y) || 1;
+        arrDx = (-o.x / d) * k;
+        arrDy = (-o.y / d) * k;
+      }
+    } else {
+      arrFade = 1;
+      arrScale = 1;
+      arrDx = 0;
+      arrDy = 0;
+      arrPulse = 0;
     }
   }
 
@@ -787,6 +835,7 @@ export function createRenderer(canvas, CONFIG) {
       if (o.dead || Math.abs(o.x) > lim || Math.abs(o.y) > lim) continue;
       const isDebris = o.kind === 'debris';
       const col = trailColor(o.kind, o.playerPlaced);
+      arrivalOf(o);
       if (o.onRails && o.r > 0.05) {
         const dir = o.omega >= 0 ? 1 : -1;
         const baseA = isDebris ? 0.4 : o.kind === 'derelict' ? 0.22 : 0.55;
@@ -794,7 +843,7 @@ export function createRenderer(canvas, CONFIG) {
         ctx.strokeStyle = 'rgb(' + col + ')';
         for (let s = 0; s < segs; s++) {
           const f = 1 - s / segs;
-          ctx.globalAlpha = baseA * f * f;
+          ctx.globalAlpha = baseA * f * f * arrFade * arrFade;
           const d0 = s * (0.6 / segs);
           const d1 = (s + 1) * (0.6 / segs) + 0.01;
           ctx.beginPath();
@@ -805,7 +854,7 @@ export function createRenderer(canvas, CONFIG) {
       } else {
         const tr = getTrail(o.id, 16);
         pushTrail(tr, o.x, o.y, 0.00008);
-        drawRingTrail(tr, o.x, o.y, col, isDebris ? 0.65 : 0.5, trailW);
+        drawRingTrail(tr, o.x, o.y, col, (isDebris ? 0.65 : 0.5) * arrFade, trailW);
       }
     }
     ctx.globalAlpha = 1;
@@ -820,6 +869,15 @@ export function createRenderer(canvas, CONFIG) {
       let g;
       let gs;
       let ga;
+      arrivalOf(o);
+      if (o.newcomer && arrPulse > 0) {
+        g = GLOW.newcomer;
+        gs = h * (3.4 + 1.6 * arrPulse) * (1 + 0.12 * Math.sin(T * 14));
+        ga = 0.85 * arrFade;
+        ctx.globalAlpha = ga;
+        ctx.drawImage(g, (o.x + arrDx) * scale - gs, -(o.y + arrDy) * scale - gs, gs * 2, gs * 2);
+        continue;
+      }
       if (kind === 'debris') {
         g = GLOW.debris;
         gs = h * 3.2;
@@ -864,10 +922,18 @@ export function createRenderer(canvas, CONFIG) {
         ang = headingOf(o);
         spr = o.playerPlaced ? SPR.placed : SPR.sat;
       }
+      arrivalOf(o);
       const c = Math.cos(ang) * dpr;
       const s = Math.sin(ang) * dpr;
-      ctx.setTransform(c, -s, s, c, ox + o.x * scale * dpr, oy - o.y * scale * dpr);
-      ctx.drawImage(spr, -h, -h, h * 2, h * 2);
+      ctx.setTransform(c, -s, s, c, ox + (o.x + arrDx) * scale * dpr, oy - (o.y + arrDy) * scale * dpr);
+      if (arrFade < 1) {
+        ctx.globalAlpha = arrFade;
+        const hs = h * arrScale;
+        ctx.drawImage(spr, -hs, -hs, hs * 2, hs * 2);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.drawImage(spr, -h, -h, h * 2, h * 2);
+      }
     }
   }
 

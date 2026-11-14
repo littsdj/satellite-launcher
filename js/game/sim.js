@@ -93,6 +93,13 @@ const KIND_NAMES = {
   debris: ['Paint fleck', 'Loose bolt', 'Metal shard', 'Tiny screw', 'Glove'],
 };
 
+/** Made-up names for satellites of other countries and companies (endless "newcomers"). */
+const NEWCOMER_NAMES = ['OceanEye', 'FarmWatch', 'SkyLink', 'StormSpotter', 'NaviStar', 'CityNet', 'IceTracker', 'TideWatch', 'CropSat', 'AeroNet'];
+
+/** Sample spacing (s) used to check that a newcomer stays clear while it appears. */
+const APPEAR_SAMPLE_DT = 0.025; // rel. speed <= ~3 -> <= 0.075 between samples, under 2x SPAWN_GAP
+const NEWCOMER_ATTEMPTS = 60;
+
 // ---------------------------------------------------------------------------
 // Simulation factory
 // ---------------------------------------------------------------------------
@@ -109,6 +116,7 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
   let orbiting = 0;
   let deadCount = 0; // objects flagged .dead awaiting compaction
   let nameCounter = 0;
+  let newcomerTotal = 0; // newcomers spawned this level (never counts towards the score)
   // Per-flight bookkeeping for the player.
   const fl = { time: 0, burnUsed: false, burnT: 0, rB: 0, dir: 1, confirmT: 0, confirmDur: 0 };
   const fragmentScratch = [];
@@ -148,8 +156,8 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
     return kind === 'derelict' ? C.DERELICT_RADIUS : kind === 'debris' ? C.DEBRIS_RADIUS : C.SATELLITE_RADIUS;
   }
 
-  function nameFor(kind) {
-    const list = KIND_NAMES[kind] || KIND_NAMES.satellite;
+  function nameFor(kind, names = null) {
+    const list = names || KIND_NAMES[kind] || KIND_NAMES.satellite;
     nameCounter += 1;
     const base = list[Math.floor(random() * list.length)];
     return kind === 'satellite' ? `${base} ${nameCounter}` : base;
@@ -188,10 +196,25 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
     return o;
   }
 
+  /**
+   * spreadTraffic: altitude bins 0..count-1 in shuffled order (one object per lane band),
+   * or null when the option is off (then no random numbers are consumed).
+   */
+  function spreadBins(count) {
+    if (!sim.level.spreadTraffic) return null;
+    const bins = Array.from({ length: count }, (_, i) => i);
+    for (let i = count - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [bins[i], bins[j]] = [bins[j], bins[i]];
+    }
+    return bins;
+  }
+
   /** Random traffic specs: mixed kinds, away from the launch site, not overlapping at t=0. */
   function generateSpecs(count) {
     const specs = [];
     const placed = [];
+    const bins = spreadBins(count);
     for (let i = 0; i < count; i++) {
       const kind = pickKind();
       let spec = null;
@@ -199,7 +222,7 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
         const angle = rand(-Math.PI, Math.PI);
         const fromUp = Math.atan2(Math.sin(angle - Math.PI / 2), Math.cos(angle - Math.PI / 2));
         if (Math.abs(fromUp) < C.SPAWN_CLEAR_ANGLE) continue;
-        const altitude = random();
+        const altitude = bins ? (bins[i] + random()) / count : random();
         spec = { kind, altitude, angle };
         const r = C.BAND_MIN + altitude * (C.BAND_MAX - C.BAND_MIN);
         const x = r * Math.cos(angle);
@@ -229,12 +252,16 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
       traffic: 0,
       debrisOnCollision: false,
       showTrajectoryPreview: true,
+      spreadTraffic: false, // stratify generated altitudes over the lanes
+      confirmTime: null, // seconds; overrides the period-based confirmation
+      newcomers: null, // endless: { schedule: [{atScore,min,max}], appear } other launchers
       ...level,
     };
     objects.length = 0;
     effects = [];
     deadCount = 0;
     nameCounter = 0;
+    newcomerTotal = 0;
     orbiting = 0;
     sim.player = null;
     sim.time = 0;
@@ -354,7 +381,10 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
     p.thrustX = 0;
     p.thrustY = 0;
     syncRails(p);
-    fl.confirmDur = Math.min(C.CONFIRM_MAX, Math.max(C.CONFIRM_MIN, circularPeriod(p.r)));
+    const custom = sim.level.confirmTime;
+    fl.confirmDur = Number.isFinite(custom) && custom > 0
+      ? custom
+      : Math.min(C.CONFIRM_MAX, Math.max(C.CONFIRM_MIN, circularPeriod(p.r)));
     fl.confirmT = 0;
   }
 
@@ -400,6 +430,78 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
       sim.phase = 'resolved';
     }
     emit('orbit', { orbiting });
+    if (isEndless() && sim.level.newcomers) spawnNewcomers();
+  }
+
+  // ----- newcomers (other launchers) -----------------------------------------
+
+  /** The schedule entry for the current score (last with atScore <= orbiting), or null. */
+  function newcomerRule() {
+    let rule = null;
+    for (const e of sim.level.newcomers.schedule || []) {
+      if (e.atScore <= orbiting) rule = e;
+    }
+    return rule;
+  }
+
+  /** Position of a rails/free body `t` seconds from now (free bodies stay put). */
+  function futurePos(o, t) {
+    if (!o.onRails) return { x: o.x, y: o.y };
+    const th = o.theta + o.omega * t;
+    return { x: o.r * Math.cos(th), y: o.r * Math.sin(th) };
+  }
+
+  /** True when `cand` stays clear of every live object (and the player) for `appear` seconds. */
+  function newcomerClear(cand, appear) {
+    const others = objects.filter((o) => !o.dead);
+    if (sim.player) others.push(sim.player);
+    for (let t = 0; t <= appear + 1e-9; t += APPEAR_SAMPLE_DT) {
+      const a = futurePos(cand, t);
+      for (const o of others) {
+        const b = futurePos(o, t);
+        const min = cand.radius + o.radius + C.SPAWN_GAP;
+        if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 <= min * min) return false;
+      }
+    }
+    return true;
+  }
+
+  /** Try to place one newcomer; returns the object or null if no clear spot was found. */
+  function placeNewcomer(appear) {
+    for (let attempt = 0; attempt < NEWCOMER_ATTEMPTS; attempt++) {
+      const angle = rand(-Math.PI, Math.PI);
+      const fromUp = Math.atan2(Math.sin(angle - Math.PI / 2), Math.cos(angle - Math.PI / 2));
+      if (Math.abs(fromUp) < C.SPAWN_CLEAR_ANGLE) continue;
+      const cand = makeRailsObject({ kind: 'satellite', altitude: random(), angle, name: 'tmp' });
+      if (!newcomerClear(cand, appear)) continue;
+      cand.name = nameFor('satellite', NEWCOMER_NAMES);
+      cand.newcomer = true;
+      cand.appear = appear;
+      cand.grace = appear;
+      return cand;
+    }
+    return null;
+  }
+
+  /** After a player success: other launchers put satellites up, never overlapping anything. */
+  function spawnNewcomers() {
+    const rule = newcomerRule();
+    if (!rule) return;
+    const appear = sim.level.newcomers.appear ?? 1.5;
+    const wanted = randInt(rule.min, rule.max);
+    const room = Math.max(0, C.MAX_OBJECTS - (objects.length - deadCount));
+    let spawned = 0;
+    for (let i = 0; i < Math.min(wanted, room); i++) {
+      const o = placeNewcomer(appear);
+      if (!o) continue;
+      objects.push(o);
+      pushEffect({ type: 'arrival', x: o.x, y: o.y, id: o.id });
+      spawned += 1;
+    }
+    if (spawned > 0) {
+      newcomerTotal += spawned;
+      emit('newcomers', { count: spawned, total: newcomerTotal, score: orbiting });
+    }
   }
 
   /** The player's satellite hit `other`: both are destroyed (and burst if debris is on). */
@@ -506,6 +608,7 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
       o.age += h;
       if (o.onRails) {
         advanceRails(o, h);
+        if (o.grace > 0) o.grace -= h;
         continue;
       }
       stepFreeBody(o, h);
@@ -630,7 +733,7 @@ export function createSim({ onEvent = () => {}, random = Math.random } = {}) {
 
   /** Snapshot for the UI. */
   function getState() {
-    return { phase: sim.phase, orbiting, objects: objects.length };
+    return { phase: sim.phase, orbiting, objects: objects.length, newcomers: newcomerTotal };
   }
 
   /** Return and clear the queued visual effects. */
