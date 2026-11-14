@@ -51,19 +51,21 @@
 
   <!-- Education article -->
   <article id="story" class="story" aria-labelledby="article-title">
+    <div class="sky" aria-hidden="true"><canvas class="sky-canvas"></canvas></div>
+    <div class="orbit-progress" aria-hidden="true"><span class="orbit-sat"></span></div>
     <div class="col">
-      <h2 id="article-title" tabindex="-1">The sky is getting crowded</h2>
+      <h2 id="article-title" tabindex="-1" data-sky="0.06">The sky is getting crowded</h2>
       <p id="opener-line" class="opener">Every satellite we launch shares the sky with everything launched before it.</p>
       <p>The crowded sky in level 3 was a simplified model, but real orbits are busy too. About 40,000 objects are tracked in space, and only about 11,000 of them are working satellites. The rest include dead satellites and pieces of debris.</p>
     </div>
 
     <div class="col">
-      <h2>What is Kessler syndrome?</h2>
+      <h2 data-sky="0.35">What is Kessler syndrome?</h2>
       <p>Picture two satellites crashing into each other. They break into lots of pieces. Those pieces fly around Earth, and any one of them can hit something else.</p>
       <p>Each new crash makes more pieces. More pieces mean more chances for crashes. That is a chain reaction.</p>
     </div>
 
-    <figure class="chain">
+    <figure class="chain" data-sky="0.6">
       <svg viewBox="0 0 640 400" role="img" aria-labelledby="chain-t chain-d" xmlns="http://www.w3.org/2000/svg">
         <title id="chain-t">A chain reaction of crashes</title>
         <desc id="chain-d">Step one: one crash. Step two: it makes pieces. Step three: pieces hit three other satellites, causing three more crashes. Step four: those crashes make even more pieces.</desc>
@@ -72,42 +74,42 @@
         </defs>
         <g class="c-lines">
           <!-- crash to pieces -->
-          <path d="M70 170L235 50M70 170L235 110M70 170L235 170M70 170L235 230M70 170L235 290"/>
+          <path data-step="2" pathLength="1" d="M70 170L235 50M70 170L235 110M70 170L235 170M70 170L235 230M70 170L235 290"/>
           <!-- pieces to new crashes -->
-          <path d="M235 50L400 60M235 110L400 60M235 170L400 170M235 230L400 280M235 290L400 280"/>
+          <path data-step="3" pathLength="1" d="M235 50L400 60M235 110L400 60M235 170L400 170M235 230L400 280M235 290L400 280"/>
           <!-- new crashes to more pieces -->
-          <path d="M400 60L570 25M400 60L570 60M400 60L570 95M400 170L570 135M400 170L570 170M400 170L570 205M400 280L570 245M400 280L570 280M400 280L570 315"/>
+          <path data-step="4" pathLength="1" d="M400 60L570 25M400 60L570 60M400 60L570 95M400 170L570 135M400 170L570 170M400 170L570 205M400 280L570 245M400 280L570 280M400 280L570 315"/>
         </g>
-        <g class="c-body"><circle cx="22" cy="128" r="11"/><circle cx="22" cy="212" r="11"/></g>
-        <use href="#burst" class="c-burst" transform="translate(70 170) scale(1.35)"/>
-        <g class="c-frag"><circle cx="235" cy="50" r="10"/><circle cx="235" cy="110" r="10"/><circle cx="235" cy="170" r="10"/><circle cx="235" cy="230" r="10"/><circle cx="235" cy="290" r="10"/></g>
-        <g class="c-body"><circle cx="400" cy="22" r="8"/><circle cx="400" cy="132" r="8"/><circle cx="400" cy="242" r="8"/></g>
-        <use href="#burst" class="c-burst" transform="translate(400 60)"/>
-        <use href="#burst" class="c-burst" transform="translate(400 170)"/>
-        <use href="#burst" class="c-burst" transform="translate(400 280)"/>
-        <g class="c-frag c-small"><circle cx="570" cy="25" r="7"/><circle cx="570" cy="60" r="7"/><circle cx="570" cy="95" r="7"/><circle cx="570" cy="135" r="7"/><circle cx="570" cy="170" r="7"/><circle cx="570" cy="205" r="7"/><circle cx="570" cy="245" r="7"/><circle cx="570" cy="280" r="7"/><circle cx="570" cy="315" r="7"/></g>
+        <g class="c-body" data-step="1"><circle cx="22" cy="128" r="11"/><circle cx="22" cy="212" r="11"/></g>
+        <use href="#burst" class="c-burst" data-step="1" transform="translate(70 170) scale(1.35)"/>
+        <g class="c-frag" data-step="2"><circle cx="235" cy="50" r="10"/><circle cx="235" cy="110" r="10"/><circle cx="235" cy="170" r="10"/><circle cx="235" cy="230" r="10"/><circle cx="235" cy="290" r="10"/></g>
+        <g class="c-body" data-step="3"><circle cx="400" cy="22" r="8"/><circle cx="400" cy="132" r="8"/><circle cx="400" cy="242" r="8"/></g>
+        <use href="#burst" class="c-burst" data-step="3" transform="translate(400 60)"/>
+        <use href="#burst" class="c-burst" data-step="3" transform="translate(400 170)"/>
+        <use href="#burst" class="c-burst" data-step="3" transform="translate(400 280)"/>
+        <g class="c-frag c-small" data-step="4"><circle cx="570" cy="25" r="7"/><circle cx="570" cy="60" r="7"/><circle cx="570" cy="95" r="7"/><circle cx="570" cy="135" r="7"/><circle cx="570" cy="170" r="7"/><circle cx="570" cy="205" r="7"/><circle cx="570" cy="245" r="7"/><circle cx="570" cy="280" r="7"/><circle cx="570" cy="315" r="7"/></g>
         <g class="c-label" text-anchor="middle">
-          <text x="70" y="360">One crash</text>
-          <text x="235" y="360">It makes</text><text x="235" y="388">pieces</text>
-          <text x="400" y="360">Pieces hit</text><text x="400" y="388">other things</text>
-          <text x="570" y="360">Even more</text><text x="570" y="388">pieces</text>
+          <text data-step="1" x="70" y="360">One crash</text>
+          <text data-step="2" x="235" y="360">It makes</text><text data-step="2" x="235" y="388">pieces</text>
+          <text data-step="3" x="400" y="360">Pieces hit</text><text data-step="3" x="400" y="388">other things</text>
+          <text data-step="4" x="570" y="360">Even more</text><text data-step="4" x="570" y="388">pieces</text>
         </g>
       </svg>
       <figcaption>One crash makes pieces. Pieces cause more crashes. Each crash makes still more pieces.</figcaption>
     </figure>
 
     <div class="col">
-      <p>In 1978, NASA scientists Donald Kessler and Burton Cour-Palais warned that this could happen if enough objects were in orbit. The European Space Agency (ESA) calls it the Kessler syndrome, and says it could make some orbits unusable.</p>
+      <p data-sky="0.7">In 1978, NASA scientists Donald Kessler and Burton Cour-Palais warned that this could happen if enough objects were in orbit. The European Space Agency (ESA) calls it the Kessler syndrome, and says it could make some orbits unusable.</p>
       <p class="note">The full runaway chain reaction has not happened. It is a risk, and scientists are working to prevent it.</p>
 
-      <h2>Why small pieces matter</h2>
+      <h2 data-sky="0.8">Why small pieces matter</h2>
       <ul>
         <li>Objects in low Earth orbit travel about 7 to 8 km every second. That is about 28,000 km/h.</li>
         <li>When two objects collide, they hit each other at about 10 km per second on average.</li>
         <li>Debris can be as small as a fleck of paint.</li>
       </ul>
 
-      <h2>A real crash: Iridium 33 and Cosmos 2251</h2>
+      <h2 data-sky="0.95">A real crash: Iridium 33 and Cosmos 2251</h2>
       <p>On 10 February 2009, a working US communications satellite, Iridium 33, crashed into a dead Russian satellite, Cosmos 2251. It happened about 790 km above Earth.</p>
       <p>It was the first accidental collision between two whole satellites. It made more than 2,000 tracked pieces of debris in total.</p>
       <p>Not by accident: in 2007, China deliberately destroyed its own old weather satellite, Fengyun-1C, with a missile. That made more than 2,000 tracked pieces too, in one of the biggest debris clouds ever.</p>
@@ -116,7 +118,7 @@
       <p>You met it in levels 2 and 3. Vanguard 1 was launched by the United States on 17 March 1958. It is the oldest human-made satellite still orbiting Earth.</p>
       <p>It stopped transmitting in 1964. It went silent, but it is still circling.</p>
 
-      <h2>How much is up there?</h2>
+      <h2 data-sky="1">How much is up there?</h2>
     </div>
 
     <div class="col">
@@ -144,7 +146,7 @@
       </ol>
       <p class="small">The more objects, the smaller the dots. Dots show the idea, not exact amounts. Numbers are from ESA's Space Environment Report 2025.</p>
 
-      <h2>Why it matters</h2>
+      <h2 data-sky="0.85">Why it matters</h2>
       <p>We use satellites every day, for:</p>
       <ul>
         <li>weather forecasts</li>
@@ -155,7 +157,7 @@
       </ul>
       <p>Every object left behind is one more thing a new launch has to avoid. The International Space Station has moved out of the way of space debris more than 40 times since 1999.</p>
 
-      <h2>What people are doing</h2>
+      <h2 data-sky="0.4">What people are doing</h2>
       <ul>
         <li><strong>Watching.</strong> The US Space Surveillance Network tracks objects generally larger than about 10 cm.</li>
         <li><strong>Clearing up sooner.</strong> In 2022, the US FCC adopted a rule that satellites in low Earth orbit (below 2,000 km) must be removed no later than 5 years after their mission ends. The older guideline was 25 years.</li>
@@ -163,7 +165,7 @@
         <li><strong>Cleaning up.</strong> ESA's ClearSpace-1 mission is planned to capture an old ESA satellite, PROBA-1 (launched in 2001), and remove it. It has not launched yet.</li>
       </ul>
 
-      <h2>Back to the launch pad</h2>
+      <h2 data-sky="0.15">Back to the launch pad</h2>
       <p>In the last level, you had only two tries. Real launches have to share the sky with everything already up there. How many satellites can you place before your own sky gets too crowded?</p>
       <p class="actions">
         <button type="button" id="to-endless-btn" class="btn btn-primary">Play the endless game</button>

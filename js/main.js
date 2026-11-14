@@ -3,6 +3,7 @@ import { createFlow } from './story/flow.js';
 import { createEndless } from './story/endless.js';
 import { createScriptedHud, createEndlessHud } from './story/hud.js';
 import { setOpener, buildLadder } from './story/article.js';
+import { initFx } from './story/fx.js';
 import * as storage from './story/storage.js';
 
 const $ = (s) => document.querySelector(s);
@@ -26,6 +27,7 @@ async function loadEngine() {
 
 async function init() {
   buildLadder();
+  try { initFx(); } catch (err) { console.warn('[satellite-launcher] story effects failed to start', err); }
 
   const stage = $('#game');
   const canvas = $('#game-canvas');
